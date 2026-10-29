@@ -9,6 +9,17 @@ Latch accounts are Soroban smart accounts — programmable wallets that replace 
 
 The system is built on the [OpenZeppelin Stellar Contracts](https://github.com/OpenZeppelin/stellar-contracts) smart account framework.
 
+## Repository Split & Architecture
+
+The Latch codebase is split into two standalone repositories on the Desktop for clear separation of protocol smart contracts and visual web applications:
+
+| Repository | Path | Role & Technology |
+| :--- | :--- | :--- |
+| **Core Smart Contracts** (This Repo) | [`latch-contracts`](.) | **Soroban Smart Contract Core**: Rust workspace containing the Account Factory, Latch Smart Account, 4 Stateless Verifiers (Ed25519, P-256, secp256k1, WebAuthn), 7 Policies (Threshold, Session, Spending Limits, etc.), Gasless Fee Forwarder, and Governance Templates. |
+| **Studio & Web Application** | [`latch-frontend`](../latch-frontend) | **Latch Studio & Web Console**: Modern Vite + TypeScript Web3 application providing interactive deterministic address derivation, biometric passkey signing ceremonies, context rules configuration, gasless transaction sponsoring, and full 16-contract testnet explorer. |
+
+---
+
 ## Repository Structure
 
 This repository is a **single Cargo workspace** — every contract is a member crate, sharing one
