@@ -1,22 +1,23 @@
-<img width="4096" height="1536" alt="Latch 7" src="https://github.com/user-attachments/assets/e7042fc8-6b72-4ceb-933f-bd8a0a55c883" />
+<img width="4096" height="1536" alt="hook-hasp" src="https://github.com/user-attachments/assets/e7042fc8-6b72-4ceb-933f-bd8a0a55c883" />
 
+# hook-hasp 🪝🔗
 
 ## Overview
 
-Soroban smart contracts for the Latch auth layer. Provides deterministic smart account creation with support for Ed25519, raw P-256, raw secp256k1, and WebAuthn signers.
+Soroban smart contracts for the **hook-hasp** auth layer. Provides deterministic smart account creation with support for Ed25519, raw P-256, raw secp256k1, and WebAuthn signers.
 
-Latch accounts are Soroban smart accounts — programmable wallets that replace private-key-only authorization with flexible multi-signer, multi-policy authorization. Users can sign transactions with Ed25519 keys, raw P-256 keys, raw secp256k1 keys, passkeys, or any supported combination. Wallet-specific signing flows require separate client integration.
+Hook-hasp accounts are Soroban smart accounts — programmable wallets that replace private-key-only authorization with flexible multi-signer, multi-policy authorization. Users can sign transactions with Ed25519 keys, raw P-256 keys, raw secp256k1 keys, passkeys, or any supported combination. Wallet-specific signing flows require separate client integration.
 
 The system is built on the [OpenZeppelin Stellar Contracts](https://github.com/OpenZeppelin/stellar-contracts) smart account framework.
 
 ## Repository Split & Architecture
 
-The Latch codebase is split into two standalone repositories on the Desktop for clear separation of protocol smart contracts and visual web applications:
+The hook-hasp codebase is split into two standalone repositories on the Desktop for clear separation of protocol smart contracts and visual web applications:
 
 | Repository | Path | Role & Technology |
 | :--- | :--- | :--- |
-| **Core Smart Contracts** (This Repo) | [`latch-contracts`](.) | **Soroban Smart Contract Core**: Rust workspace containing the Account Factory, Latch Smart Account, 4 Stateless Verifiers (Ed25519, P-256, secp256k1, WebAuthn), 7 Policies (Threshold, Session, Spending Limits, etc.), Gasless Fee Forwarder, and Governance Templates. |
-| **Studio & Web Application** | [`latch-frontend`](../latch-frontend) | **Latch Studio & Web Console**: Modern Vite + TypeScript Web3 application providing interactive deterministic address derivation, biometric passkey signing ceremonies, context rules configuration, gasless transaction sponsoring, and full 16-contract testnet explorer. |
+| **Core Smart Contracts** (This Repo) | [`hook-hasp`](.) | **Soroban Smart Contract Core**: Rust workspace containing the Account Factory, Smart Account, 4 Stateless Verifiers (Ed25519, P-256, secp256k1, WebAuthn), 7 Policies (Threshold, Session, Spending Limits, etc.), Gasless Fee Forwarder, and Governance Templates. |
+| **Studio & Web Application** | [`hook-hasp-frontend`](../latch-frontend) | **Hook Hasp Studio & Web Console**: Modern Vite + TypeScript Web3 application providing interactive deterministic address derivation, biometric passkey signing ceremonies, context rules configuration, gasless transaction sponsoring, and full 16-contract testnet explorer. |
 
 ---
 
@@ -83,7 +84,7 @@ Stateless singleton contracts that verify signatures on behalf of smart accounts
 | `webauthn-verifier` | Passkeys, Face ID, Touch ID, YubiKey | 65-byte P-256 key + credential ID | ✅ Implemented |
 
 `secp256k1-verifier` checks a low-S `r[32] || s[32] || recovery_id[1]`
-signature over the raw Latch auth digest. The recovery ID must be raw `0` or
+signature over the raw hook-hasp auth digest. The recovery ID must be raw `0` or
 `1`; clients receiving Ethereum-style `27`/`28` values must normalize them
 off-chain. This does not provide EIP-191, `personal_sign`, or automatic MetaMask
 compatibility.
@@ -98,7 +99,7 @@ OZ weighted threshold policy — each signer gets an individual weight, and a mi
 
 ### Session Policy — `policies/session-policy/` ✅
 
-Restricts a context rule's signers to an allow-listed set of contract function names — the building block behind Latch session keys. Own logic, not a wrapper around an OZ primitive.
+Restricts a context rule's signers to an allow-listed set of contract function names — the building block behind hook-hasp session keys. Own logic, not a wrapper around an OZ primitive.
 
 ### Spending Limit Policy — `policies/spending-limit-policy/` ✅
 
@@ -106,11 +107,11 @@ Thin wrapper around OZ's `stellar-accounts` spending-limit policy. Enforces a ro
 
 ### Fee Forwarder — `fee-forwarder/` ✅
 
-Singleton, permissioned contract that lets `latch-relayer` sponsor gasless transactions for Latch accounts holding no XLM. Thin wrapper around OZ's `stellar-fee-abstraction` helpers, following OZ's `examples/fee-forwarder-permissioned` reference. An account signs one authorization tree covering `forward()`, with sub-invocations for the fee-token `approve` and the actual target call; the relayer (gated to the `executor` role) fills in the real `fee_amount` (`<=` the user's signed cap) and submits, paying the network's XLM fee itself. The contract collects the fee and forwards the target call atomically — either both succeed or the whole transaction reverts. `enable_fee_token`/`disable_fee_token`/`sweep_tokens` are manager-gated. Off-chain quoting, holding the executor credential, and submitting `forward()` transactions are out of scope here — tracked in the companion `latch-relayer` issue.
+Singleton, permissioned contract that lets `latch-relayer` sponsor gasless transactions for hook-hasp accounts holding no XLM. Thin wrapper around OZ's `stellar-fee-abstraction` helpers, following OZ's `examples/fee-forwarder-permissioned` reference. An account signs one authorization tree covering `forward()`, with sub-invocations for the fee-token `approve` and the actual target call; the relayer (gated to the `executor` role) fills in the real `fee_amount` (`<=` the user's signed cap) and submits, paying the network's XLM fee itself. The contract collects the fee and forwards the target call atomically — either both succeed or the whole transaction reverts. `enable_fee_token`/`disable_fee_token`/`sweep_tokens` are manager-gated. Off-chain quoting, holding the executor credential, and submitting `forward()` transactions are out of scope here — tracked in the companion `latch-relayer` issue.
 
 ### Demo — `demo/` ⚠️
 
-Not part of the shipped contract lineup — not deployed for real use, not wired into anything. `modified-ed25519-verifier` was built to prove a one-off demo (a Phantom-held key deploying and owning a Latch smart account on-chain), not a real product feature: Latch and Phantom are separate browser extensions, and nothing gives Latch's own extension an ongoing way to drive Phantom's signing popup afterward. Kept as a worked reference for the general "wallet popup won't sign a raw hash" wrapping pattern — see its module doc.
+Not part of the shipped contract lineup — not deployed for real use, not wired into anything. `modified-ed25519-verifier` was built to prove a one-off demo (a Phantom-held key deploying and owning a hook-hasp smart account on-chain), not a real product feature: hook-hasp and Phantom are separate browser extensions, and nothing gives hook-hasp's own extension an ongoing way to drive Phantom's signing popup afterward. Kept as a worked reference for the general "wallet popup won't sign a raw hash" wrapping pattern — see its module doc.
 
 ## Deployment Order
 
