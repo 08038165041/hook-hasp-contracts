@@ -11,11 +11,15 @@ version = 2
 yanked = "deny"
 unmaintained = "workspace"
 unsound = "all"
-ignore = []
+ignore = [
+    { id = "RUSTSEC-2026-0387", reason = "crypto-bigint 0.5.5 timing side-channel is pulled in only via soroban-env-host and off-chain test dev-dependencies (p256/k256); on-chain Soroban WASM contracts verify signatures via host syscalls" },
+]
 
 [licenses]
 version = 2
 confidence-threshold = 0.9
+# Internal workspace crates have publish = false and inherit the root MIT LICENSE.
+private = { ignore = true }
 # Strictly allow permissive OSS licenses; copyleft (GPL/AGPL/LGPL) is denied.
 allow = [
     "Apache-2.0",
@@ -35,8 +39,10 @@ allow = [
 exceptions = []
 
 [bans]
-# Prevent wildcard (*) version specifiers that can silently pull malicious releases.
+# Prevent wildcard (*) registry version specifiers that can silently pull malicious releases,
+# while permitting internal workspace path dev-dependencies (path = "../...").
 wildcards = "deny"
+allow-wildcard-paths = true
 # Warn on duplicate transitive crate versions (common across Soroban SDK + dev-deps).
 multiple-versions = "warn"
 highlight = "all"
