@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Git pre-commit hook for hook-hasp-contracts.
+# Installed via: ./scripts/install-hooks.sh
+set -euo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+exec "$REPO_ROOT/scripts/security_malware_check.sh" --staged

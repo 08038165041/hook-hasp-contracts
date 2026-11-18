@@ -51,3 +51,36 @@ how we use them.
 This project has not yet undergone an external security audit. Treat it as
 early-stage software: do not deploy it to hold real value without your own
 independent review. This will be updated once an audit has taken place.
+
+## Automated Anti-Malware & Supply-Chain Safety Checks
+
+Every push and pull request is gated by automated malware-prevention and
+supply-chain integrity checks:
+
+- **Static Anti-Malware Scanner (`scripts/security_malware_check.sh`)** —
+  Runs in CI (`.github/workflows/security-malware.yml`) and locally as a git
+  pre-commit hook (`.githooks/pre-commit`). Blocks:
+  - Native executables and archives (ELF, PE/MZ, Mach-O, ZIP/TAR/JAR) detected
+    by magic bytes regardless of file extension, as well as unauthorized `.wasm`
+    binaries outside `deployments/artifacts/*/` and `**/testdata/`.
+  - Build-time arbitrary code execution hooks (`build.rs`, `proc-macro = true`,
+    and `.cargo/config.toml` `runner`/`linker`/`rustc-wrapper`/`rustflags`).
+  - Host-escape or unsafe Rust constructs (`unsafe`, `std::process`, `std::net`,
+    `std::fs`, `std::env`, `extern "C"`, `transmute`, `libc`).
+  - Obfuscated script droppers (`curl|bash`, `base64 -d | sh`, reverse shells,
+    secret exfiltration).
+  - Trojan Source (CVE-2021-42574) bidirectional and zero-width Unicode attacks.
+  - Rogue Cargo sources (`git =`, alternative registries, wildcard versions,
+    non-crates.io entries in `Cargo.lock`).
+  - Hardcoded private keys, Stellar secret seeds (`S...`), and cloud/GitHub
+    tokens.
+  - Unpinned GitHub Actions or workflows missing explicit `permissions:`.
+- **Dependency & License Gates (`deny.toml`, `cargo-audit`, Dependency Review,
+  CodeQL)** — Blocks vulnerable, yanked, unsound, copyleft, or non-crates.io
+  dependencies on every PR and weekly scheduled run.
+
+Contributors should enable the local pre-commit hook once per clone:
+
+```bash
+./scripts/install-hooks.sh
+```

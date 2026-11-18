@@ -1,0 +1,58 @@
+# cargo-deny configuration for hook-hasp-contracts
+# Enforces strict supply-chain isolation, vulnerability blocking, and license compliance.
+# See: https://embarkstudios.github.io/cargo-deny/
+
+[graph]
+all-features = true
+
+[advisories]
+version = 2
+# Block known vulnerabilities (default: deny), yanked crates, and unsound crates.
+yanked = "deny"
+unmaintained = "workspace"
+unsound = "all"
+ignore = []
+
+[licenses]
+version = 2
+confidence-threshold = 0.9
+# Strictly allow permissive OSS licenses; copyleft (GPL/AGPL/LGPL) is denied.
+allow = [
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "BSL-1.0",
+    "CC0-1.0",
+    "ISC",
+    "MIT",
+    "MPL-2.0",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+    "Unlicense",
+    "Zlib",
+]
+exceptions = []
+
+[bans]
+# Prevent wildcard (*) version specifiers that can silently pull malicious releases.
+wildcards = "deny"
+# Warn on duplicate transitive crate versions (common across Soroban SDK + dev-deps).
+multiple-versions = "warn"
+highlight = "all"
+workspace-default-features = "allow"
+external-default-features = "allow"
+# Explicitly ban high-risk C/native-binding crates unnecessary for Soroban WASM contracts.
+deny = [
+    { crate = "openssl-sys", reason = "Unnecessary native C OpenSSL binding in Soroban WASM workspace" },
+    { crate = "libssh2-sys", reason = "Unnecessary native SSH library in smart-contract workspace" },
+    { crate = "curl-sys", reason = "Unnecessary native HTTP client in smart-contract workspace" },
+]
+
+[sources]
+# Enforce strict crates.io registry isolation to prevent dependency confusion
+# and unauthorized git/rogue-registry supply-chain attacks.
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []
