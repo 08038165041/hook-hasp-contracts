@@ -17,7 +17,9 @@ use stellar_accounts::{
     smart_account::{self as smart_account, AuthPayload, ContextRuleType, Signer},
 };
 
-use super::{LatchSmartAccount, LatchSmartAccountClient};
+use super::{
+    LatchSmartAccount, LatchSmartAccountClient, DEFAULT_RECOVERY_INACTIVITY_DELAY_LEDGERS,
+};
 
 // A real, tiny, already-existing no-op contract (zero-arg constructor),
 // reused from `factory-contract`'s own testdata rather than building a new
@@ -732,4 +734,357 @@ fn create_contract_rule_rejects_non_matching_signer() {
     env.as_contract(&account_id, || {
         let _ = smart_account::do_check_auth(&env, &payload_hash, &signatures, &auth_contexts);
     });
+}
+
+// ################## FALLBACK RECOVERY INTEGRATION TESTS ##################
+
+#[test]
+fn set_and_get_recovery_config_succeeds_with_self_auth() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let signers = default_signers(&env);
+    let policies = Map::new(&env);
+    let (_account_id, client) = register_account(&env, &signers, &policies);
+
+    let g1 = Signer::Delegated(Address::generate(&env));
+    let g2 = Signer::Delegated(Address::generate(&env));
+    let g3 = Signer::Delegated(Address::generate(&env));
+    let guardians = vec![&env, g1, g2, g3];
+
+    client.set_recovery_config(&guardians, &2, &DEFAULT_RECOVERY_INACTIVITY_DELAY_LEDGERS);
+
+    let config = client.get_recovery_config();
+    assert_eq!(config.threshold, 2);
+    assert_eq!(config.inactivity_delay_ledgers, DEFAULT_RECOVERY_INACTIVITY_DELAY_LEDGERS);
+    assert_eq!(config.recovery_signers, guardians);
+    assert!(!client.is_recovery_eligible());
+    assert_eq!(client.get_recovery_nonce(), 0);
+}
+
+#[test]
+#[should_panic]
+fn set_recovery_config_requires_self_auth() {
+    let env = Env::default();
+    let signers = default_signers(&env);
+    let policies = Map::new(&env);
+    let (_account_id, client) = register_account(&env, &signers, &policies);
+
+    let g1 = Signer::Delegated(Address::generate(&env));
+    let guardians = vec![&env, g1];
+    client.set_recovery_config(&guardians, &1, &100);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #4003)")] // InvalidRecoveryConfig
+fn set_recovery_config_rejects_zero_threshold() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let signers = default_signers(&env);
+    let policies = Map::new(&env);
+    let (_account_id, client) = register_account(&env, &signers, &policies);
+
+    let g1 = Signer::Delegated(Address::generate(&env));
+    client.set_recovery_config(&vec![&env, g1], &0, &100);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #4003)")] // InvalidRecoveryConfig
+fn set_recovery_config_rejects_threshold_greater_than_signers() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let signers = default_signers(&env);
+    let policies = Map::new(&env);
+    let (_account_id, client) = register_account(&env, &signers, &policies);
+
+    let g1 = Signer::Delegated(Address::generate(&env));
+    client.set_recovery_config(&vec![&env, g1], &2, &100);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #4003)")] // InvalidRecoveryConfig
+fn set_recovery_config_rejects_empty_signers() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let signers = default_signers(&env);
+    let policies = Map::new(&env);
+    let (_account_id, client) = register_account(&env, &signers, &policies);
+
+    client.set_recovery_config(&vec![&env], &1, &100);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #4003)")] // InvalidRecoveryConfig
+fn set_recovery_config_rejects_duplicate_signers() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let signers = default_signers(&env);
+    let policies = Map::new(&env);
+    let (_account_id, client) = register_account(&env, &signers, &policies);
+
+    let g1 = Signer::Delegated(Address::generate(&env));
+    let duplicate_guardians = vec![&env, g1.clone(), g1];
+    client.set_recovery_config(&duplicate_guardians, &1, &100);
+}
+
+#[test]
+fn remove_recovery_config_succeeds_with_self_auth() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let signers = default_signers(&env);
+    let policies = Map::new(&env);
+    let (_account_id, client) = register_account(&env, &signers, &policies);
+
+    let g1 = Signer::Delegated(Address::generate(&env));
+    client.set_recovery_config(&vec![&env, g1], &1, &100);
+    assert_eq!(client.get_recovery_config().threshold, 1);
+
+    client.remove_recovery_config();
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #4002)")] // RecoveryNotConfigured
+fn remove_recovery_config_panics_when_not_configured() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let signers = default_signers(&env);
+    let policies = Map::new(&env);
+    let (_account_id, client) = register_account(&env, &signers, &policies);
+
+    client.remove_recovery_config();
+}
+
+#[test]
+#[should_panic]
+fn remove_recovery_config_requires_self_auth() {
+    let env = Env::default();
+    let signers = default_signers(&env);
+    let policies = Map::new(&env);
+    let (_account_id, client) = register_account(&env, &signers, &policies);
+
+    client.remove_recovery_config();
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #4004)")] // InactivityDelayNotMet
+fn recovery_rejects_when_inactivity_delay_not_met() {
+    let env = Env::default();
+    env.mock_all_auths();
+    env.ledger().set_sequence_number(1_000);
+
+    let signers = default_signers(&env);
+    let policies = Map::new(&env);
+    let (_account_id, client) = register_account(&env, &signers, &policies);
+
+    assert_eq!(client.get_last_active_ledger(), 1_000);
+
+    let g1 = Signer::Delegated(Address::generate(&env));
+    let delay = 100u32;
+    client.set_recovery_config(&vec![&env, g1.clone()], &1, &delay);
+
+    // Advance by only 99 ledgers (1 ledger short of the 100 ledgers inactivity
+    // delay)
+    env.ledger().set_sequence_number(1_099);
+    assert!(!client.is_recovery_eligible());
+
+    let new_signer = Signer::Delegated(Address::generate(&env));
+    let mut signatures = Map::new(&env);
+    signatures.set(g1, Bytes::new(&env));
+
+    // Must panic with InactivityDelayNotMet (#4004)
+    client.recover_signers(&0, &vec![&env, new_signer], &signatures);
+}
+
+#[test]
+fn inactivity_check_verified_against_host_ledger_sequence() {
+    let env = Env::default();
+    env.mock_all_auths();
+    env.ledger().set_sequence_number(10_000);
+
+    let signers = default_signers(&env);
+    let policies = Map::new(&env);
+    let (_account_id, client) = register_account(&env, &signers, &policies);
+
+    let g1 = Signer::Delegated(Address::generate(&env));
+    let delay = 500u32;
+    client.set_recovery_config(&vec![&env, g1.clone()], &1, &delay);
+
+    assert_eq!(client.get_last_active_ledger(), 10_000);
+    assert!(!client.is_recovery_eligible());
+
+    // Advance ledger to exactly the required delay
+    env.ledger().set_sequence_number(10_500);
+    assert!(client.is_recovery_eligible());
+
+    let new_signer = Signer::Delegated(Address::generate(&env));
+    let mut signatures = Map::new(&env);
+    signatures.set(g1, Bytes::new(&env));
+
+    client.recover_signers(&0, &vec![&env, new_signer.clone()], &signatures);
+
+    let updated_rule = client.get_context_rule(&0);
+    assert_eq!(updated_rule.signers, vec![&env, new_signer]);
+    assert_eq!(client.get_last_active_ledger(), 10_500);
+    // After recovery, last active ledger is updated so it is no longer eligible
+    // until another delay
+    assert!(!client.is_recovery_eligible());
+}
+
+#[test]
+fn touch_activity_resets_inactivity_timer() {
+    let env = Env::default();
+    env.mock_all_auths();
+    env.ledger().set_sequence_number(1_000);
+
+    let signers = default_signers(&env);
+    let policies = Map::new(&env);
+    let (_account_id, client) = register_account(&env, &signers, &policies);
+
+    let g1 = Signer::Delegated(Address::generate(&env));
+    let delay = 100u32;
+    client.set_recovery_config(&vec![&env, g1], &1, &delay);
+
+    // Advance ledger past delay
+    env.ledger().set_sequence_number(1_200);
+    assert!(client.is_recovery_eligible());
+
+    // Primary owner proves activity by touching activity
+    client.touch_activity();
+    assert_eq!(client.get_last_active_ledger(), 1_200);
+    assert!(!client.is_recovery_eligible());
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #4005)")] // RecoveryThresholdNotMet
+fn recovery_threshold_rules_enforced_requires_threshold() {
+    let env = Env::default();
+    env.mock_all_auths();
+    env.ledger().set_sequence_number(1_000);
+
+    let signers = default_signers(&env);
+    let policies = Map::new(&env);
+    let (_account_id, client) = register_account(&env, &signers, &policies);
+
+    let g1 = Signer::Delegated(Address::generate(&env));
+    let g2 = Signer::Delegated(Address::generate(&env));
+    let g3 = Signer::Delegated(Address::generate(&env));
+    client.set_recovery_config(&vec![&env, g1.clone(), g2, g3], &2, &100);
+
+    // Advance ledger sequence past delay
+    env.ledger().set_sequence_number(1_200);
+
+    // Provide only 1 signature when threshold is 2
+    let mut signatures = Map::new(&env);
+    signatures.set(g1, Bytes::new(&env));
+
+    let new_signer = Signer::Delegated(Address::generate(&env));
+    client.recover_signers(&0, &vec![&env, new_signer], &signatures);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #4006)")] // UnauthorizedRecoverySigner
+fn recovery_threshold_rules_enforced_rejects_unauthorized_signer() {
+    let env = Env::default();
+    env.mock_all_auths();
+    env.ledger().set_sequence_number(1_000);
+
+    let signers = default_signers(&env);
+    let policies = Map::new(&env);
+    let (_account_id, client) = register_account(&env, &signers, &policies);
+
+    let g1 = Signer::Delegated(Address::generate(&env));
+    client.set_recovery_config(&vec![&env, g1], &1, &100);
+
+    env.ledger().set_sequence_number(1_200);
+
+    // Sign with an unauthorized attacker key
+    let attacker = Signer::Delegated(Address::generate(&env));
+    let mut signatures = Map::new(&env);
+    signatures.set(attacker, Bytes::new(&env));
+
+    let new_signer = Signer::Delegated(Address::generate(&env));
+    client.recover_signers(&0, &vec![&env, new_signer], &signatures);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #4008)")] // EmptyNewSigners
+fn recovery_rejects_empty_new_signers() {
+    let env = Env::default();
+    env.mock_all_auths();
+    env.ledger().set_sequence_number(1_000);
+
+    let signers = default_signers(&env);
+    let policies = Map::new(&env);
+    let (_account_id, client) = register_account(&env, &signers, &policies);
+
+    let g1 = Signer::Delegated(Address::generate(&env));
+    client.set_recovery_config(&vec![&env, g1.clone()], &1, &100);
+
+    env.ledger().set_sequence_number(1_200);
+
+    let mut signatures = Map::new(&env);
+    signatures.set(g1, Bytes::new(&env));
+
+    client.recover_signers(&0, &vec![&env], &signatures);
+}
+
+#[test]
+fn end_to_end_recovery_rotates_signers_and_prevents_lockup() {
+    let env = Env::default();
+    env.mock_all_auths();
+    env.ledger().set_sequence_number(1_000);
+
+    // Initial account created with primary signer
+    let primary_owner = Signer::Delegated(Address::generate(&env));
+    let initial_signers = vec![&env, primary_owner.clone()];
+    let policies = Map::new(&env);
+    let (_account_id, client) = register_account(&env, &initial_signers, &policies);
+
+    // Set up 2-of-3 threshold fallback recovery with 14-day delay (241,920 ledgers)
+    let g1 = Signer::Delegated(Address::generate(&env));
+    let g2 = Signer::Delegated(Address::generate(&env));
+    let g3 = Signer::Delegated(Address::generate(&env));
+    let guardians = vec![&env, g1.clone(), g2.clone(), g3];
+    client.set_recovery_config(&guardians, &2, &DEFAULT_RECOVERY_INACTIVITY_DELAY_LEDGERS);
+
+    // Target contract to test post-recovery execution
+    let target_id = env.register(MockTargetContract, ());
+    let target_client = MockTargetContractClient::new(&env, &target_id);
+
+    // Verify initial execution works with primary signer
+    client.execute(&target_id, &Symbol::new(&env, "set"), &vec![&env, 100u32.into_val(&env)]);
+    assert_eq!(target_client.get(), 100);
+
+    // Primary signer is now lost! Inactivity delay passes: 14 days later
+    let recovery_ledger = 1_000 + DEFAULT_RECOVERY_INACTIVITY_DELAY_LEDGERS;
+    env.ledger().set_sequence_number(recovery_ledger);
+    assert!(client.is_recovery_eligible());
+
+    // Replacement new primary signer
+    let new_primary = Signer::Delegated(Address::generate(&env));
+    let new_signers = vec![&env, new_primary.clone()];
+
+    // Guardians G1 and G2 authorize the recovery ceremony
+    let digest = client.get_recovery_digest(&0, &new_signers);
+    assert_eq!(digest.len(), 32);
+
+    let mut signatures = Map::new(&env);
+    signatures.set(g1, Bytes::new(&env));
+    signatures.set(g2, Bytes::new(&env));
+
+    // Recovery executed by secondary threshold signers
+    assert_eq!(client.get_recovery_nonce(), 0);
+    client.recover_signers(&0, &new_signers, &signatures);
+
+    // Verify default rule signers were rotated: primary_owner removed, new_primary
+    // added
+    let default_rule = client.get_context_rule(&0);
+    assert_eq!(default_rule.signers, new_signers);
+    assert!(!default_rule.signers.contains(&primary_owner));
+    assert_eq!(client.get_recovery_nonce(), 1);
+    assert_eq!(client.get_last_active_ledger(), recovery_ledger);
+
+    // New primary signer can now execute actions! Lockup prevented!
+    client.execute(&target_id, &Symbol::new(&env, "set"), &vec![&env, 200u32.into_val(&env)]);
+    assert_eq!(target_client.get(), 200);
 }

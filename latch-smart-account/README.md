@@ -28,6 +28,26 @@ Creates a single `Default` context rule named `"default"` with the provided sign
 fn batch_add_signer(env: &Env, context_rule_id: u32, signers: Vec<Signer>)
 ```
 
+**`set_recovery_config`** — configures the secondary threshold fallback recovery mechanism. Gated by self-auth. Configures secondary signers (social recovery guardians, backup hardware keys), a recovery threshold, and an extended inactivity delay (e.g. 14 days / 241,920 ledgers).
+```rust
+fn set_recovery_config(env: &Env, recovery_signers: Vec<Signer>, threshold: u32, inactivity_delay_ledgers: u32)
+```
+
+**`recover_signers`** — recovers the smart account by replacing signers on a context rule with `new_signers` if the primary signers have been inactive for at least the configured delay, and at least `threshold` secondary recovery signers authenticate the recovery ceremony.
+```rust
+fn recover_signers(env: &Env, context_rule_id: u32, new_signers: Vec<Signer>, signatures: Map<Signer, Bytes>)
+```
+
+**`touch_activity`** — explicitly refreshes the account's last active ledger sequence to the current host ledger, resetting the inactivity timer. Requires self-auth.
+```rust
+fn touch_activity(env: &Env)
+```
+
+**`is_recovery_eligible`** — read-only check whether the account has been inactive for at least the configured inactivity delay ledgers.
+```rust
+fn is_recovery_eligible(env: &Env) -> bool
+```
+
 **`upgrade`** — replaces the account's own WASM in place, preserving storage. Requires self-auth — gated by `e.current_contract_address().require_auth()`, the same as every other mutation here. No external admin involved. See [`UPGRADE_PATH.md`](../docs/UPGRADE_PATH.md) for the full reasoning.
 ```rust
 fn upgrade(env: &Env, new_wasm_hash: BytesN<32>, operator: Address)
